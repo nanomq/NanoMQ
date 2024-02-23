@@ -31,6 +31,10 @@
 #include "nng/supplemental/nanolib/parquet.h"
 #endif
 
+#ifdef SUPP_BLF
+#include "nng/supplemental/nanolib/blf.h"
+#endif
+
 #define NANO_LMQ_INIT_CAP 16
 
 // The server keeps a list of work items, sorted by expiration time,
@@ -95,7 +99,7 @@ send_mqtt_msg_cat(nng_socket *sock, const char *topic, nng_msg **msgs, uint32_t 
 	return rv;
 }
 
-#ifdef SUPP_PARQUET
+#ifdef SUPP_PARQUET || SUPP_BLF
 
 static char *
 get_file_bname(char *fpath)

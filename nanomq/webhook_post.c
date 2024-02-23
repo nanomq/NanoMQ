@@ -19,6 +19,9 @@
 #ifdef SUPP_PARQUET
 #include "nng/supplemental/nanolib/parquet.h"
 #endif
+#ifdef SUPP_BLF
+#include "nng/supplemental/nanolib/blf.h"
+#endif
 
 static bool event_filter(conf_web_hook *hook_conf, webhook_event event);
 static bool event_filter_with_topic(
@@ -412,6 +415,20 @@ flush_smsg_to_disk(nng_msg **smsg, size_t len, void *handle, nng_aio *aio)
 	parquet_obj = parquet_object_alloc(keys, (uint8_t **)datas,
 		lens, len2, aio, (void *)smsg);
 	parquet_write_batch_async(parquet_obj);
+#elseifdef SUPP_BLF
+	if (false == nng_aio_begin(aio)) {
+		log_error("nng aio begin failed");
+		return NNG_EBUSY;
+	}
+
+	if (len2 > 0)
+		log_warn("flush to blf (%d) %lld...%lld", len2, keys[0], keys[len2-1]);
+	// write to disk
+	blf_object *blf_obj;
+	blf_obj = blf_object_alloc(keys, (uint8_t **)datas,
+		lens, len2, aio, (void *)smsg);
+	blf_write_batch_async(blf_obj);
+
 #else
 	nng_free(keys, len);
 	nng_free(datas, len);
@@ -530,16 +547,21 @@ hook_exchange_sender_init(conf *nanomq_conf, struct work **works, uint64_t num_c
 {
 	conf_web_hook *hook_conf = &nanomq_conf->web_hook;
 	conf_parquet *parquet_conf = &nanomq_conf->parquet;
+	conf_blf *blf_conf = &nanomq_conf->blf;
 
 	for (int i=0; i<num_ctx; ++i) {
 		nng_aio_alloc(&hook_conf->saios[i], send_exchange_cb, works[i]);
 	}
 
-	if (!parquet_conf->enable)
+	if (!parquet_conf->enable && !blf_conf->enable)
 		return -1;
 
 #ifdef SUPP_PARQUET
 	parquet_write_launcher(parquet_conf);
+#endif
+
+#ifdef SUPP_BLF
+	blf_write_launcher(blf_conf);
 #endif
 
 	return 0;
