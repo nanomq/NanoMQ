@@ -454,20 +454,22 @@ flush_smsg_to_disk(nng_msg **smsg, size_t len, void *handle, nng_aio *aio)
 		len2 ++;
 	}
 
-#ifdef SUPP_PARQUET
-	if (false == nng_aio_begin(aio)) {
-		log_error("nng aio begin failed");
-		return NNG_EBUSY;
-	}
-
-	if (len2 > 0)
-		log_warn("flush to parquet (%d) %lld...%lld", len2, keys[0], keys[len2-1]);
-	// write to disk
-	parquet_object *parquet_obj;
-	parquet_obj = parquet_object_alloc(keys, (uint8_t **)datas,
-		lens, len2, aio, (void *)smsg);
-	parquet_write_batch_async(parquet_obj);
-#elif defined (SUPP_BLF)
+#if defined (SUPP_PARQUET) || defined(SUPP_BLF)
+ #ifdef SUPP_PARQUET
+ 	if (false == nng_aio_begin(aio)) {
+ 		log_error("nng aio begin failed");
+ 		return NNG_EBUSY;
+ 	}
+ 
+ 	if (len2 > 0)
+ 		log_warn("flush to parquet (%d) %lld...%lld", len2, keys[0], keys[len2-1]);
+ 	// write to disk
+ 	parquet_object *parquet_obj;
+ 	parquet_obj = parquet_object_alloc(keys, (uint8_t **)datas,
+ 		lens, len2, aio, (void *)smsg);
+ 	parquet_write_batch_async(parquet_obj);
+ #endif
+#if defined (SUPP_BLF)
 	if (false == nng_aio_begin(aio)) {
 		log_error("nng aio begin failed");
 		return NNG_EBUSY;
@@ -482,7 +484,7 @@ flush_smsg_to_disk(nng_msg **smsg, size_t len, void *handle, nng_aio *aio)
 	log_error("aaaaaaaaa");
 	blf_write_batch_async(blf_obj);
 
-#else
+#endif
 	nng_free(keys, len);
 	nng_free(datas, len);
 	nng_free(lens, len);
@@ -500,7 +502,6 @@ flush_smsg_to_disk(nng_msg **smsg, size_t len, void *handle, nng_aio *aio)
 static void
 send_exchange_cb(void *arg)
 {
-	// log_error("aaaaaaaaaaaa");
 	struct work *w = arg;
 	int          rv;
 
@@ -520,7 +521,7 @@ send_exchange_cb(void *arg)
 	if (!msg)
 		return;
 
-	nng_msg **msgs_del = nng_aio_get_prov_data(aio);
+        nng_msg **msgs_del = nng_aio_get_prov_data(aio);
 	nng_aio_set_prov_data(aio, NULL);
 	if (!msgs_del) {
 		nng_msg_free(msg);
@@ -534,20 +535,23 @@ send_exchange_cb(void *arg)
 	log_error("aaaaa");
 
 	// Flush to disk. Call Parquet
-	if (parquet_conf->enable) {
-		nng_mtx_lock(hook_conf->ex_mtx);
-		rv = flush_smsg_to_disk(msgs_del, msgs_len, NULL, hook_conf->ex_aio);
-		if (rv != 0)
-			log_error("flush error %d", rv);
-		nng_mtx_unlock(hook_conf->ex_mtx);
-	} else if (blf_conf->enable) {
-		log_error("saasdasd");
-		nng_mtx_lock(hook_conf->ex_mtx);
-		rv = flush_smsg_to_disk(msgs_del, msgs_len, NULL, hook_conf->ex_aio);
-		if (rv != 0)
-			log_error("flush error %d", rv);
-		nng_mtx_unlock(hook_conf->ex_mtx);
-	} else {
+	if (parquet_conf->enable || blf_conf->enable) {
+	    if (parquet_conf->enable) {
+	    	nng_mtx_lock(hook_conf->ex_mtx);
+	    	rv = flush_smsg_to_disk(msgs_del, msgs_len, NULL, hook_conf->ex_aio);
+	    	if (rv != 0)
+	    		log_error("flush error %d", rv);
+	    	nng_mtx_unlock(hook_conf->ex_mtx);
+	    }
+        if (blf_conf->enable) {
+	    	log_error("saasdasd");
+	    	nng_mtx_lock(hook_conf->ex_mtx);
+	    	rv = flush_smsg_to_disk(msgs_del, msgs_len, NULL, hook_conf->ex_aio);
+	    	if (rv != 0)
+	    		log_error("flush error %d", rv);
+	    	nng_mtx_unlock(hook_conf->ex_mtx);
+	    }
+    } else {
 		for (int i=0; i<msgs_len; ++i)
 			if (msgs_del[i]) {
 				nng_msg_free(msgs_del[i]);
@@ -620,12 +624,18 @@ hook_exchange_sender_init(conf *nanomq_conf, struct work **works, uint64_t num_c
 		return -1;
 
 #ifdef SUPP_PARQUET
-	parquet_write_launcher(parquet_conf);
+	if (parquet_conf->enable) {
+
+        log_error("parquet_write_launcher");
+	    parquet_write_launcher(parquet_conf);
+    }
 #endif
 
 #ifdef SUPP_BLF
-	log_error("blf_write_launcher");
-	blf_write_launcher(blf_conf);
+	if (blf_conf->enable) {
+        log_error("blf_write_launcher");
+	    blf_write_launcher(blf_conf);
+    }
 #endif
 
 	return 0;
