@@ -451,6 +451,7 @@ set_reload_config(cJSON *json, conf *config)
 	getBoolValue(json, item, "bridge_mode", bridge_mode, rv);
 	if (rv == 0) {
 		update_var(config->bridge_mode, bridge_mode);
+		log_info("update bridge mode to %d", config->bridge_mode);
 	}
 	getNumberValue(json, item, "max_packet_size", max_packet_size, rv);
 	if (rv == 0) {
